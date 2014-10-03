@@ -1,0 +1,94 @@
+apply plugin: 'java'
+apply plugin: 'eclipse'
+apply plugin: 'maven'
+apply plugin: 'groovy'
+
+sourceCompatibility = 1.5
+version = '1.0'
+
+ext {
+	def duration
+	def startTime
+}
+
+buildscript {
+	repositories {
+		mavenCentral()
+	}
+
+	dependencies {
+		classpath 'com.h2database:h2:1.4.181'
+	}
+}
+
+jar {
+	manifest {
+		attributes 'Implementation-Title': 'Gradle Quickstart',
+                   'Implementation-Version': version
+	}
+}
+
+uploadArchives {
+	repositories {
+		flatDir {
+			dirs 'repos'
+		}
+	}
+}
+
+task writeIntoDatabase(type: WriteDbTask) {
+}
+
+task readFromDatabase(type: ReadDbTask) {
+	sqlString = "select task, avg(duration) from gradle_statistics group by task"
+}
+
+tasks.findAll() {
+	it.doFirst { task ->
+		ext.startTime = new Date()
+    }
+	it.doLast { tttt ->
+		if (!(tttt instanceof DbTask)) {
+			ext.duration = (new Date().getTime() - ext.startTime.getTime())
+			println name + ' duration is ' + ext.duration  + ' ms'
+			tasks.withType(WriteDbTask) { h2 ->
+				h2.sqlString = "insert into gradle_statistics(task, duration) values('" + tttt.name + "', " + duration + ")"	
+				h2.execute()
+			}
+		}
+	}
+}
+
+class DbTask extends DefaultTask {
+	def sqlString
+	def username = 'sa'
+	def password = ''
+
+	def getConnection() {
+		def driver = Class.forName('org.h2.Driver').newInstance() as java.sql.Driver
+ 
+		def props = new Properties()
+		props.setProperty("user", username)
+		props.setProperty("password", password)
+  
+		def conn = driver.connect('jdbc:h2:~/test', props)
+	}
+}
+
+class WriteDbTask extends DbTask {
+	@Grab('com.h2database:h2:1.4.181')
+	@TaskAction
+	def runQuery() {
+		new groovy.sql.Sql(getConnection()).execute(sqlString)
+	}
+}
+
+class ReadDbTask extends DbTask {
+	@Grab('com.h2database:h2:1.4.181')
+	@TaskAction
+	def runQuery() {
+		new groovy.sql.Sql(getConnection()).eachRow(sqlString) { row ->
+			println row
+		}
+	}
+}
